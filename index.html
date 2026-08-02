@@ -535,7 +535,27 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   }
 
   // ---------- product name / option parsing ----------
-  const FIT_RE = /(슬림핏|오버핏|루즈핏|레귤러핏|와이드핏|박시핏|스탠다드핏|세미오버핏)\s*(반팔|긴팔|나시|민소매|후드집업|후드|맨투맨|셔츠|원피스|치마|스커트|팬츠|조거팬츠|가디건|니트)/;
+  const FIT_RE = /(슬림핏|오버핏|루즈핏|레귤러핏|와이드핏|박시핏|박스핏|스탠다드핏|세미오버핏)\s*(반팔|긴팔|나시|민소매|후드집업|후드|후디|맨투맨|셔츠|원피스|치마|스커트|팬츠|조거팬츠|가디건|니트)/;
+
+  // 옷 종류(핏)별 공급 거래처. 박스핏 반팔은 YUM, 그 외(오버핏/슬림핏 반팔, 후디 등 기존 품목)는
+  // 전부 트리거에서 공급받으므로 별도 규칙 없이 기본값으로 처리한다. 새 거래처가 추가되면 이 배열에
+  // 규칙만 추가하면 된다.
+  const VENDOR_BY_FIT_PATTERN = [
+    { pattern: /박스핏/, vendor: 'YUM' }
+  ];
+  const DEFAULT_VENDOR = '트리거';
+  const VENDOR_ORDER = ['트리거', 'YUM'];
+  function vendorForFit(fit){
+    const rule = VENDOR_BY_FIT_PATTERN.find(function(r){ return r.pattern.test(fit); });
+    return rule ? rule.vendor : DEFAULT_VENDOR;
+  }
+  function vendorSort(a, b){
+    const ia = VENDOR_ORDER.indexOf(a), ib = VENDOR_ORDER.indexOf(b);
+    if (ia !== -1 && ib !== -1) return ia - ib;
+    if (ia !== -1) return -1;
+    if (ib !== -1) return 1;
+    return a < b ? -1 : (a > b ? 1 : 0);
+  }
 
   function parseNameMeta(productName, productCode){
     productName = productName || '';
@@ -653,7 +673,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     }
 
     // parse each row for aggregation + issues
-    const clothingAgg = {}; // fit -> base -> size -> qty
+    const clothingAgg = {}; // vendor -> fit -> base -> size -> qty
     const filmAgg = {}; // "design||fit" -> label -> qty
     const filmOrder = []; // preserve design order for stable secondary sort
 
@@ -694,9 +714,11 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
             return;
           }
 
-          clothingAgg[fit] = clothingAgg[fit] || {};
-          clothingAgg[fit][base] = clothingAgg[fit][base] || {};
-          clothingAgg[fit][base][size] = (clothingAgg[fit][base][size] || 0) + effQty;
+          const vendor = vendorForFit(fit);
+          clothingAgg[vendor] = clothingAgg[vendor] || {};
+          clothingAgg[vendor][fit] = clothingAgg[vendor][fit] || {};
+          clothingAgg[vendor][fit][base] = clothingAgg[vendor][fit][base] || {};
+          clothingAgg[vendor][fit][base][size] = (clothingAgg[vendor][fit][base][size] || 0) + effQty;
 
           const key = design + '||' + fit;
           if (!filmAgg[key]){ filmAgg[key] = {}; filmOrder.push(key); }
@@ -733,6 +755,18 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     if (varA && !varB) return 1;
     return korSort(varA, varB);
   }
+  // S/M/L/XL/2XL/3XL/4XL 같은 문자 사이즈를 옷 치수 순서대로 정렬하기 위한 순위.
+  // "XXL"과 "2XL"처럼 같은 치수를 다르게 표기해도 같은 순위가 나오도록 둘 다 처리한다.
+  function letterSizeRank(str){
+    const s = String(str).trim().toUpperCase();
+    const base = {'S':0, 'M':1, 'L':2};
+    if (Object.prototype.hasOwnProperty.call(base, s)) return base[s];
+    let m = s.match(/^(\d+)\s*X\s*L$/);
+    if (m) return 2 + parseInt(m[1], 10);
+    m = s.match(/^(X+)L$/);
+    if (m) return 2 + m[1].length;
+    return null;
+  }
   function sizeSort(a, b){
     const na = parseFloat(a), nb = parseFloat(b);
     const aNum = !isNaN(na) && /^-?\d+(\.\d+)?$/.test(String(a).trim());
@@ -740,28 +774,41 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     if (aNum && bNum) return na - nb;
     if (aNum) return -1;
     if (bNum) return 1;
+    const ra = letterSizeRank(a), rb = letterSizeRank(b);
+    if (ra !== null && rb !== null) return ra - rb;
+    if (ra !== null) return -1;
+    if (rb !== null) return 1;
     return korSort(a,b);
   }
 
   function buildClothingText(clothingAgg){
-    const fits = Object.keys(clothingAgg).sort(korSort);
+    const vendors = Object.keys(clothingAgg).sort(vendorSort);
     let out = [];
     let grand = 0;
-    fits.forEach(function(fit, fi){
-      out.push('<'+fit+'>');
-      let subtotal = 0;
-      const colors = Object.keys(clothingAgg[fit]).sort(korSort);
-      colors.forEach(function(color){
-        const sizes = Object.keys(clothingAgg[fit][color]).sort(sizeSort);
-        sizes.forEach(function(size){
-          const q = clothingAgg[fit][color][size];
-          out.push('  ' + color + ' ' + size + '사이즈 - ' + q + '장');
-          subtotal += q;
+    vendors.forEach(function(vendor, vi){
+      out.push('■ ' + vendor + ' 발주');
+      let vendorTotal = 0;
+      const fits = Object.keys(clothingAgg[vendor]).sort(korSort);
+      fits.forEach(function(fit, fi){
+        out.push('<'+fit+'>');
+        let subtotal = 0;
+        const colors = Object.keys(clothingAgg[vendor][fit]).sort(korSort);
+        colors.forEach(function(color){
+          const sizes = Object.keys(clothingAgg[vendor][fit][color]).sort(sizeSort);
+          sizes.forEach(function(size){
+            const q = clothingAgg[vendor][fit][color][size];
+            out.push('  ' + color + ' ' + size + '사이즈 - ' + q + '장');
+            subtotal += q;
+          });
         });
+        out.push('  소계: ' + subtotal + '장');
+        vendorTotal += subtotal;
+        if (fi < fits.length - 1) out.push('────────────────────────');
       });
-      out.push('  소계: ' + subtotal + '장');
-      grand += subtotal;
-      if (fi < fits.length - 1) out.push('────────────────────────');
+      out.push('');
+      out.push(vendor + ' 합계: ' + vendorTotal + '장');
+      grand += vendorTotal;
+      if (vi < vendors.length - 1){ out.push(''); out.push('════════════════════════'); out.push(''); }
     });
     out.push('');
     out.push('총합: ' + grand + '장');
@@ -808,10 +855,12 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     const issues = [];
     unified.forEach(function(u){ u.issues.forEach(function(msg){ issues.push({u:u, msg:msg}); }); });
     let totalGarments = 0;
-    Object.keys(result.clothingAgg).forEach(function(fit){
-      Object.keys(result.clothingAgg[fit]).forEach(function(color){
-        Object.keys(result.clothingAgg[fit][color]).forEach(function(size){
-          totalGarments += result.clothingAgg[fit][color][size];
+    Object.keys(result.clothingAgg).forEach(function(vendor){
+      Object.keys(result.clothingAgg[vendor]).forEach(function(fit){
+        Object.keys(result.clothingAgg[vendor][fit]).forEach(function(color){
+          Object.keys(result.clothingAgg[vendor][fit][color]).forEach(function(size){
+            totalGarments += result.clothingAgg[vendor][fit][color][size];
+          });
         });
       });
     });
