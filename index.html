@@ -630,10 +630,11 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   function buildShippingRows(unified, pickupDateCompact, boxType, freight){
     return unified.map(function(u){
       const recipientPhone = u.row['수취인 연락처'] || '';
+      const recipientName = u.row['수취인명'] || '';
       return [
         '',
         pickupDateCompact,
-        u.row['수취인명'] || '',
+        recipientName.length === 1 ? (recipientName + recipientName) : recipientName,
         recipientPhone,
         recipientPhone,
         u.row['우편번호'] || '',
