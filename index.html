@@ -1095,9 +1095,11 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   // 세 어드민 양식은 컬럼이 상당 부분 겹치므로(특히 일반/아무드), 각 양식에만 있는 "전용 컬럼"으로만
   // 판별한다 — 예를 들어 일반은 판매채널·수취인 연락처·배송타입이 있지만 아무드/교환에는 없다.
   // 이 업체는 항상 CJ대한통운만 사용하므로, 송장번호를 채울 때 택배사명/택배사코드도 같이 채워야
-  // 에이블리 업로드 시 에러가 나지 않는다 (택배사코드는 숫자 1).
+  // 에이블리 업로드 시 에러가 나지 않는다. 택배사코드는 일반/교환은 숫자 1이지만, 아무드는
+  // 에이블리 상 다른 코드(6)로 등록되어 있어 아무드만 6을 넣어야 한다.
   const COURIER_NAME = 'CJ대한통운';
   const COURIER_CODE = 1;
+  const COURIER_CODE_AMUD = 6;
 
   const ADMIN_FORMATS = {
     general: {
@@ -1105,7 +1107,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       invoiceCol:'송장번호', productCol:'상품명', productCodeCol:'판매자 상품코드',
       optionCol:'옵션 정보', optionFallbackCol:null,
       recipientNameCol:'수취인명', recipientPhoneCol:'수취인 연락처', addressCol:'배송지 주소',
-      courierNameCol:'택배사', courierCodeCol:'택배사 코드',
+      courierNameCol:'택배사', courierCodeCol:'택배사 코드', courierCode: COURIER_CODE,
       isEmpty: function(v){ return !v; }
     },
     amud: {
@@ -1113,7 +1115,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       invoiceCol:'송장번호', productCol:'상품명', productCodeCol:'판매자 상품코드',
       optionCol:'옵션 정보', optionFallbackCol:null,
       recipientNameCol:'수취인명', recipientPhoneCol:'연락처', addressCol:'배송지 주소',
-      courierNameCol:'택배사', courierCodeCol:'택배사 코드',
+      courierNameCol:'택배사', courierCodeCol:'택배사 코드', courierCode: COURIER_CODE_AMUD,
       isEmpty: function(v){ return !v; }
     },
     exchange: {
@@ -1121,7 +1123,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       invoiceCol:'재배송송장번호', productCol:'상품명', productCodeCol:null,
       optionCol:'교환요청 옵션', optionFallbackCol:'기존 옵션',
       recipientNameCol:'수령인명', recipientPhoneCol:'수령인연락처', addressCol:'교환재배송지정보',
-      courierNameCol:'재배송택배사', courierCodeCol:'재배송택배사코드',
+      courierNameCol:'재배송택배사', courierCodeCol:'재배송택배사코드', courierCode: COURIER_CODE,
       isEmpty: function(v){ return !v || String(v).trim() === '송장입력 필요'; }
     }
   };
@@ -1183,6 +1185,12 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
 
       const existingRaw = row[invoiceColIdx];
       const recipientName = normKeyPart(row[aIdx[fmt.recipientNameCol]]);
+      // 에이블리는 수취인명이 한 글자면 업로드 시 오류가 나므로, 매칭 여부와 무관하게
+      // 다운로드 파일에는 항상 두 글자 이상으로 채워 넣는다 (예: "혁" -> "혁혁").
+      if (recipientName.length === 1){
+        const nameAddr = XLSX.utils.encode_cell({r:r, c:aIdx[fmt.recipientNameCol]});
+        sheet[nameAddr] = {t:'s', v: recipientName + recipientName};
+      }
       const phone = normKeyPart(row[aIdx[fmt.recipientPhoneCol]]);
       const address = fmt.addressCol && aIdx[fmt.addressCol] !== undefined ? normKeyPart(row[aIdx[fmt.addressCol]]) : '';
       let optionStr = fmt.optionCol ? row[aIdx[fmt.optionCol]] : '';
@@ -1242,7 +1250,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
         }
         if (courierCodeColIdx !== null){
           const codeAddr = XLSX.utils.encode_cell({r:e.sheetRow, c:courierCodeColIdx});
-          sheet[codeAddr] = {t:'n', v: COURIER_CODE};
+          sheet[codeAddr] = {t:'n', v: fmt.courierCode};
         }
         matched++;
         if (isMergedGroup) mergedMatched++;
