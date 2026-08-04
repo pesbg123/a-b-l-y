@@ -585,17 +585,26 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   function parseOptionString(optionStr){
     if (!optionStr) return {items:[], error:'empty'};
     const tokens = String(optionStr).split('/').map(function(s){ return s.trim(); });
-    if (tokens.length === 0 || tokens.length % 2 !== 0) return {items:[], error:'odd-tokens'};
+    if (tokens.length === 0) return {items:[], error:'odd-tokens'};
+    // 보통은 "색상/사이즈" 2단 구조지만, [기모선택]처럼 상품에 추가 옵션(예: 기모/논기모)이
+    // 붙으면 에이블리가 "추가옵션/색상/사이즈" 3단 구조로 내려준다. 2로 나눠떨어지면 기존 방식을
+    // 그대로 쓰고, 홀수(2로 안 나눠짐)일 때만 3단 구조인지 확인해서 대응한다.
+    let groupSize = 2;
+    if (tokens.length % 2 !== 0){
+      if (tokens.length % 3 === 0) groupSize = 3;
+      else return {items:[], error:'odd-tokens'};
+    }
     const items = [];
-    for (let i=0;i<tokens.length;i+=2){
-      let colorPart = tokens[i], sizePart = tokens[i+1];
+    for (let i=0;i<tokens.length;i+=groupSize){
+      const attr = groupSize === 3 ? tokens[i] : null;
+      let colorPart = tokens[i + (groupSize - 2)], sizePart = tokens[i + (groupSize - 1)];
       let subDesign = null;
       const sepIdx = colorPart.indexOf(' - ');
       if (sepIdx !== -1){
         subDesign = colorPart.slice(0, sepIdx).trim();
         colorPart = colorPart.slice(sepIdx+3).trim();
       }
-      items.push({subDesign:subDesign, colorRaw:colorPart, size:sizePart});
+      items.push({subDesign:subDesign, colorRaw:colorPart, size:sizePart, attr:attr});
     }
     return {items:items, error:null};
   }
@@ -707,7 +716,9 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       if (!parsed.error){
         parsed.items.forEach(function(item){
           const design = item.subDesign || meta.design;
-          const fit = meta.fit;
+          // 기모/논기모처럼 옵션에 딸린 추가 속성은 원단이 달라 생산 단위가 갈리므로 핏 이름에 붙여
+          // 옷 수량 집계·전사필름 집계에서 서로 다른 항목으로 구분되게 한다.
+          const fit = meta.fit + (item.attr ? ('(' + item.attr + ')') : '');
           const {base, variant} = splitColor(item.colorRaw);
           const size = item.size || '(사이즈 미상)';
 
@@ -1087,10 +1098,11 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     const labels = [];
     parsed.items.forEach(function(item){
       const design = item.subDesign || meta.design;
+      const fit = meta.fit + (item.attr ? ('(' + item.attr + ')') : '');
       const {base, variant} = splitColor(item.colorRaw);
       const size = item.size || '(사이즈 미상)';
       const colorLabel = base ? (base + (variant ? ('(' + variant + ')') : '')) : (item.colorRaw || '?');
-      labels.push(shippingItemLabel(design, meta.ok, meta.fit, colorLabel, size));
+      labels.push(shippingItemLabel(design, meta.ok, fit, colorLabel, size));
     });
     return labels;
   }
