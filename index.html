@@ -191,6 +191,7 @@
       </div>
       <div class="actions-row" style="margin-top:0;">
         <button class="btn" type="button" id="manualAddBtn">+ 추가</button>
+        <button class="btn" type="button" id="manualCancelBtn" style="display:none;">취소</button>
       </div>
       <ul class="manual-list" id="manualList"></ul>
     </details>
@@ -396,6 +397,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   // ---------- manual row (수동 송장 추가) wiring ----------
   (function(){
     const addBtn = document.getElementById('manualAddBtn');
+    const cancelBtn = document.getElementById('manualCancelBtn');
     const list = document.getElementById('manualList');
     const fields = {
       productName: document.getElementById('mf-productName'),
@@ -410,26 +412,73 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       memo: document.getElementById('mf-memo')
     };
 
+    let nextId = 1;
+    let editingId = null; // null이면 새로 추가하는 중, 아니면 해당 _id를 수정 중
+
+    function resetForm(){
+      Object.keys(fields).forEach(function(k){ fields[k].value = ''; });
+      fields.qty.value = '1';
+    }
+
+    function exitEditMode(){
+      editingId = null;
+      addBtn.textContent = '+ 추가';
+      cancelBtn.style.display = 'none';
+      resetForm();
+    }
+
     function renderManualList(){
       list.innerHTML = '';
-      manualRows.forEach(function(m, idx){
+      manualRows.forEach(function(m){
         const li = document.createElement('li');
+        if (m._id === editingId) li.style.borderColor = 'var(--brand)';
         const span = document.createElement('span');
         span.className = 'nm';
         span.textContent = m.productName + ' / ' + m.optionStr + ' — ' + m.recipientName + ' (' + m.address + ')';
         span.title = span.textContent;
+        const btnGroup = document.createElement('span');
+        btnGroup.style.display = 'flex'; btnGroup.style.gap = '10px'; btnGroup.style.flexShrink = '0';
+        const edit = document.createElement('button');
+        edit.type = 'button';
+        edit.textContent = '✎';
+        edit.title = '수정';
+        edit.style.color = 'var(--brand-dark)';
+        edit.addEventListener('click', function(){
+          editingId = m._id;
+          fields.productName.value = m.productName;
+          fields.optionStr.value = m.optionStr;
+          fields.qty.value = m.qty;
+          fields.ordererName.value = m.ordererName;
+          fields.ordererPhone.value = m.ordererPhone;
+          fields.recipientName.value = m.recipientName;
+          fields.recipientPhone.value = m.recipientPhone;
+          fields.zip.value = m.zip;
+          fields.address.value = m.address;
+          fields.memo.value = m.memo;
+          addBtn.textContent = '수정 완료';
+          cancelBtn.style.display = 'inline-flex';
+          renderManualList();
+          fields.productName.focus();
+        });
         const rm = document.createElement('button');
         rm.type = 'button';
         rm.textContent = '✕';
         rm.addEventListener('click', function(){
-          manualRows.splice(idx,1);
+          const idx = manualRows.findIndex(function(r){ return r._id === m._id; });
+          if (idx !== -1) manualRows.splice(idx,1);
+          if (editingId === m._id) exitEditMode();
           renderManualList();
           refreshConvertBtn();
         });
-        li.appendChild(span); li.appendChild(rm);
+        btnGroup.appendChild(edit); btnGroup.appendChild(rm);
+        li.appendChild(span); li.appendChild(btnGroup);
         list.appendChild(li);
       });
     }
+
+    cancelBtn.addEventListener('click', function(){
+      exitEditMode();
+    });
 
     addBtn.addEventListener('click', function(){
       const productName = fields.productName.value.trim();
@@ -441,7 +490,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
         showToast('상품명·옵션 정보·수취인명·수취인 연락처·배송지 주소는 필수입니다');
         return;
       }
-      manualRows.push({
+      const entry = {
         productName: productName,
         optionStr: optionStr,
         qty: parseInt(fields.qty.value, 10) || 1,
@@ -452,12 +501,19 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
         zip: fields.zip.value.trim(),
         address: address,
         memo: fields.memo.value.trim()
-      });
+      };
+      if (editingId !== null){
+        const idx = manualRows.findIndex(function(r){ return r._id === editingId; });
+        if (idx !== -1){ entry._id = editingId; manualRows[idx] = entry; }
+        exitEditMode();
+      } else {
+        entry._id = nextId++;
+        manualRows.push(entry);
+        resetForm();
+        fields.productName.focus();
+      }
       renderManualList();
       refreshConvertBtn();
-      Object.keys(fields).forEach(function(k){ fields[k].value = ''; });
-      fields.qty.value = '1';
-      fields.productName.focus();
     });
   })();
 
