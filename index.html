@@ -71,6 +71,27 @@
   }
   .field-group input[type=number]{width:100px;}
 
+  .manual-toggle{margin-top:16px; border-top:1px dashed var(--border); padding-top:14px;}
+  .manual-toggle > summary{cursor:pointer; font-size:13px; font-weight:600; color:var(--brand-dark); list-style:none;}
+  .manual-toggle > summary::-webkit-details-marker{display:none;}
+  .manual-toggle > summary::before{content:'▸ '; font-size:11px;}
+  .manual-toggle[open] > summary::before{content:'▾ '; }
+  .manual-toggle .desc{margin:6px 0 12px;}
+  .manual-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:12px;}
+  @media (max-width:800px){.manual-grid{grid-template-columns:repeat(2,1fr);}}
+  .mf-field{display:flex; flex-direction:column; gap:4px;}
+  .mf-field.wide{grid-column:span 3;}
+  @media (max-width:800px){.mf-field.wide{grid-column:span 2;}}
+  .mf-field label{font-size:11.5px; color:var(--sub); font-weight:600;}
+  .mf-field input{padding:8px 10px; border:1px solid var(--border); border-radius:9px; font-size:13px; width:100%;}
+  .manual-list{list-style:none; padding:0; margin:0 0 12px; font-size:12.5px;}
+  .manual-list li{
+    display:flex; justify-content:space-between; align-items:center; gap:6px;
+    background:#fff; border:1px solid var(--border); border-radius:8px; padding:8px 10px; margin-bottom:6px;
+  }
+  .manual-list li .nm{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .manual-list li button{border:none; background:none; color:var(--danger); cursor:pointer; font-size:14px; line-height:1; flex-shrink:0;}
+
   #results{display:none;}
   .summary-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px;}
   @media (max-width:800px){.summary-grid{grid-template-columns:repeat(2,1fr);}}
@@ -152,6 +173,27 @@
         <ul class="filelist"></ul>
       </div>
     </div>
+
+    <details class="manual-toggle" id="manualToggle">
+      <summary>송장 수동 추가 (선택 · 교환기한 경과 등 파일에 없는 예외 건)</summary>
+      <p class="desc">파일 업로드 없이 직접 입력한 건도 옷 수량·전사필름 집계와 송장 양식에 포함되며, 변환 결과의 맨 뒤에 추가됩니다.</p>
+      <div class="manual-grid">
+        <div class="mf-field"><label for="mf-productName">상품명 *</label><input type="text" id="mf-productName" placeholder="예: ASCENT 슬림핏 반팔 4 COLORS"></div>
+        <div class="mf-field"><label for="mf-optionStr">옵션 정보 *</label><input type="text" id="mf-optionStr" placeholder="예: 화이트/L"></div>
+        <div class="mf-field"><label for="mf-qty">수량</label><input type="number" id="mf-qty" min="1" value="1"></div>
+        <div class="mf-field"><label for="mf-ordererName">주문자명</label><input type="text" id="mf-ordererName"></div>
+        <div class="mf-field"><label for="mf-ordererPhone">주문자 연락처</label><input type="text" id="mf-ordererPhone"></div>
+        <div class="mf-field"><label for="mf-recipientName">수취인명 *</label><input type="text" id="mf-recipientName"></div>
+        <div class="mf-field"><label for="mf-recipientPhone">수취인 연락처 *</label><input type="text" id="mf-recipientPhone"></div>
+        <div class="mf-field"><label for="mf-zip">우편번호</label><input type="text" id="mf-zip"></div>
+        <div class="mf-field wide"><label for="mf-address">배송지 주소 *</label><input type="text" id="mf-address"></div>
+        <div class="mf-field wide"><label for="mf-memo">요청사항</label><input type="text" id="mf-memo"></div>
+      </div>
+      <div class="actions-row" style="margin-top:0;">
+        <button class="btn" type="button" id="manualAddBtn">+ 추가</button>
+      </div>
+      <ul class="manual-list" id="manualList"></ul>
+    </details>
 
     <div class="actions-row">
       <input type="text" id="labelInput" placeholder="다운로드 파일명에 쓸 브랜드/라벨 (예: YUM, 어바웃) — 비워두면 '발주'로 표시">
@@ -290,6 +332,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
 
   // ---------- state ----------
   const state = { general:[], amud:[], exchange:[] }; // arrays of {file}
+  const manualRows = []; // 파일 없이 직접 입력한 발주 건 (교환기한 경과 등 예외용) — 변환 시 일반 발주 맨 뒤에 합쳐진다
   let lastResult = null;
   const invoiceState = { adminFiles:[], courierFile:null };
   let lastInvoiceResults = [];
@@ -346,9 +389,77 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   });
 
   function refreshConvertBtn(){
-    const total = state.general.length + state.amud.length + state.exchange.length;
+    const total = state.general.length + state.amud.length + state.exchange.length + manualRows.length;
     document.getElementById('convertBtn').disabled = total === 0;
   }
+
+  // ---------- manual row (수동 송장 추가) wiring ----------
+  (function(){
+    const addBtn = document.getElementById('manualAddBtn');
+    const list = document.getElementById('manualList');
+    const fields = {
+      productName: document.getElementById('mf-productName'),
+      optionStr: document.getElementById('mf-optionStr'),
+      qty: document.getElementById('mf-qty'),
+      ordererName: document.getElementById('mf-ordererName'),
+      ordererPhone: document.getElementById('mf-ordererPhone'),
+      recipientName: document.getElementById('mf-recipientName'),
+      recipientPhone: document.getElementById('mf-recipientPhone'),
+      zip: document.getElementById('mf-zip'),
+      address: document.getElementById('mf-address'),
+      memo: document.getElementById('mf-memo')
+    };
+
+    function renderManualList(){
+      list.innerHTML = '';
+      manualRows.forEach(function(m, idx){
+        const li = document.createElement('li');
+        const span = document.createElement('span');
+        span.className = 'nm';
+        span.textContent = m.productName + ' / ' + m.optionStr + ' — ' + m.recipientName + ' (' + m.address + ')';
+        span.title = span.textContent;
+        const rm = document.createElement('button');
+        rm.type = 'button';
+        rm.textContent = '✕';
+        rm.addEventListener('click', function(){
+          manualRows.splice(idx,1);
+          renderManualList();
+          refreshConvertBtn();
+        });
+        li.appendChild(span); li.appendChild(rm);
+        list.appendChild(li);
+      });
+    }
+
+    addBtn.addEventListener('click', function(){
+      const productName = fields.productName.value.trim();
+      const optionStr = fields.optionStr.value.trim();
+      const recipientName = fields.recipientName.value.trim();
+      const recipientPhone = fields.recipientPhone.value.trim();
+      const address = fields.address.value.trim();
+      if (!productName || !optionStr || !recipientName || !recipientPhone || !address){
+        showToast('상품명·옵션 정보·수취인명·수취인 연락처·배송지 주소는 필수입니다');
+        return;
+      }
+      manualRows.push({
+        productName: productName,
+        optionStr: optionStr,
+        qty: parseInt(fields.qty.value, 10) || 1,
+        ordererName: fields.ordererName.value.trim(),
+        ordererPhone: fields.ordererPhone.value.trim(),
+        recipientName: recipientName,
+        recipientPhone: recipientPhone,
+        zip: fields.zip.value.trim(),
+        address: address,
+        memo: fields.memo.value.trim()
+      });
+      renderManualList();
+      refreshConvertBtn();
+      Object.keys(fields).forEach(function(k){ fields[k].value = ''; });
+      fields.qty.value = '1';
+      fields.productName.focus();
+    });
+  })();
 
   function showToast(msg){
     const t = document.getElementById('toast');
@@ -690,6 +801,27 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
         fileStats.push({file:entry.file.name, cat:cat, rows:count, sheet: picked ? picked.sheetName : '(찾지 못함)'});
       }
     }
+
+    // 파일 없이 직접 입력한 수동 추가 건은 항상 파일 기반 행들 뒤에 붙여서, 변환 결과(옷 수량 집계·
+    // 전사필름 집계·송장 양식)의 맨 뒤에 오도록 한다.
+    manualRows.forEach(function(m, idx){
+      const obj = {
+        '상품명': m.productName,
+        '옵션 정보': m.optionStr,
+        '수량': m.qty,
+        '주문자명': m.ordererName,
+        '연락처': m.ordererPhone,
+        '수취인명': m.recipientName,
+        '수취인 연락처': m.recipientPhone,
+        '우편번호': m.zip,
+        '배송지 주소': m.address,
+        '배송 메모': m.memo,
+        __rowNum: '수동' + (idx + 1)
+      };
+      const mapped = mapGeneralRow(obj, '(수동 추가)');
+      mapped.issues = mapped.extraIssues ? mapped.extraIssues.slice() : [];
+      unified.push(mapped);
+    });
 
     // parse each row for aggregation + issues
     const clothingAgg = {}; // vendor -> fit -> base -> size -> qty
