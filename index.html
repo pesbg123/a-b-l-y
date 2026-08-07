@@ -611,6 +611,12 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
 
   function splitColor(colorRaw){
     const parts = (colorRaw||'').split(/\s+/).filter(Boolean);
+    // "화이트 레드"처럼 뒷단어가 전사 포인트색인 경우엔 옷은 앞단어(바탕색) 기준으로 세고 필름만
+    // 포인트색별로 나눈다. 하지만 "메란지"는 포인트색이 아니라 원단 자체가 다른 색이라
+    // (예: "화이트 메란지" ≠ "화이트"), 이 경우엔 쪼개지 않고 통째로 하나의 색상으로 다룬다.
+    if (parts.length > 1 && parts[parts.length-1].indexOf('메란지') !== -1){
+      return {base: parts.join(' '), variant: ''};
+    }
     return {base: parts[0]||'', variant: parts.slice(1).join(' ')};
   }
 
