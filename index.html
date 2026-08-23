@@ -730,15 +730,21 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     return a < b ? -1 : (a > b ? 1 : 0);
   }
 
+  // 상품코드/상품명에 이 신호가 있어야만 "1+1 세트 상품"으로 취급한다. 이 신호가 없는 일반
+  // 단일 상품은 옵션 정보의 " - "를 디자인 구분자로 해석하면 안 된다(투톤 컬러명 등과 혼동되어
+  // 디자인명이 색상명으로 뒤바뀌는 사고를 막기 위함).
+  const SET_MARKER_RE = /1\+1|세트|SET/i;
+
   function parseNameMeta(productName, productCode){
     productName = productName || '';
     productCode = productCode || '';
-    if (productCode && !/1\+1|세트|SET/i.test(productCode)){
+    const isSet = SET_MARKER_RE.test(productCode) || SET_MARKER_RE.test(productName);
+    if (productCode && !SET_MARKER_RE.test(productCode)){
       const parts = productCode.split('_').filter(Boolean);
       if (parts.length >= 3){
         const maybeFit = parts[0] + ' ' + parts[1];
         if (FIT_RE.test(maybeFit)){
-          return {fit: maybeFit, design: parts.slice(2).join(' '), ok:true};
+          return {fit: maybeFit, design: parts.slice(2).join(' '), ok:true, isSet: isSet};
         }
       }
     }
@@ -746,13 +752,13 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     if (m){
       const fit = m[1] + ' ' + m[2];
       const design = productName.slice(0, m.index).replace(BRACKET_TAG_RE,'').trim();
-      return {fit: fit, design: design || '(디자인명 미상)', ok:true};
+      return {fit: fit, design: design || '(디자인명 미상)', ok:true, isSet: isSet};
     }
     const design = productName.replace(/\d+\s*COLORS?/i,'').replace(/\bSET\b/i,'').replace(BRACKET_TAG_RE,'').trim();
-    return {fit:'기타', design: design || '(상품명 없음)', ok:false};
+    return {fit:'기타', design: design || '(상품명 없음)', ok:false, isSet: isSet};
   }
 
-  function parseOptionString(optionStr){
+  function parseOptionString(optionStr, isSet){
     if (!optionStr) return {items:[], error:'empty'};
     const tokens = String(optionStr).split('/').map(function(s){ return s.trim(); });
     if (tokens.length === 0) return {items:[], error:'odd-tokens'};
@@ -769,10 +775,15 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       const attr = groupSize === 3 ? tokens[i] : null;
       let colorPart = tokens[i + (groupSize - 2)], sizePart = tokens[i + (groupSize - 1)];
       let subDesign = null;
-      const sepIdx = colorPart.indexOf(' - ');
-      if (sepIdx !== -1){
-        subDesign = colorPart.slice(0, sepIdx).trim();
-        colorPart = colorPart.slice(sepIdx+3).trim();
+      // 1+1 세트 상품일 때만 " - "를 "디자인명 - 색상" 구분자로 해석한다. 세트가 아닌 일반
+      // 상품은 색상명 자체에 " - "가 들어가도(투톤 컬러 표기 등) 디자인명이 색상명으로
+      // 잘못 뒤바뀌지 않도록 그대로 둔다.
+      if (isSet){
+        const sepIdx = colorPart.indexOf(' - ');
+        if (sepIdx !== -1){
+          subDesign = colorPart.slice(0, sepIdx).trim();
+          colorPart = colorPart.slice(sepIdx+3).trim();
+        }
       }
       items.push({subDesign:subDesign, colorRaw:colorPart, size:sizePart, attr:attr});
     }
@@ -894,7 +905,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       if (!meta.ok) u.issues.push('상품명에서 핏(제품유형)을 인식하지 못함: "'+productName+'" → 수동 확인 필요');
 
       const optionStr = u.row['옵션 정보'];
-      const parsed = parseOptionString(optionStr);
+      const parsed = parseOptionString(optionStr, meta.isSet);
       if (parsed.error) {
         u.issues.push('옵션 정보 형식을 해석하지 못함: "'+optionStr+'"');
       }
@@ -1289,7 +1300,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
 
   function computeItemLabelsForAdminRow(productName, productCode, optionStr){
     const meta = parseNameMeta(productName, productCode);
-    const parsed = parseOptionString(optionStr);
+    const parsed = parseOptionString(optionStr, meta.isSet);
     if (parsed.error){
       return [(meta.design || productName || '상품명 미상') + (optionStr ? (' / ' + optionStr) : ' / (옵션 정보 없음)')];
     }
