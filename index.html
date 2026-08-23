@@ -705,7 +705,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   }
 
   // ---------- product name / option parsing ----------
-  const FIT_RE = /(슬림핏|오버핏|루즈핏|레귤러핏|와이드핏|박시핏|박스핏|스탠다드핏|세미오버핏)\s*(반팔|긴팔|나시|민소매|후드집업|후드|후디|맨투맨|셔츠|원피스|치마|스커트|팬츠|조거팬츠|가디건|니트)/;
+  const FIT_RE = /(슬림핏|오버핏|루즈핏|레귤러핏|와이드핏|박시핏|박스핏|스탠다드핏|세미오버핏|롤업)\s*(반팔|긴팔|나시|민소매|후드집업|후드|후디|맨투맨|셔츠|원피스|치마|스커트|팬츠|조거팬츠|가디건|니트)/;
   // 상품명 앞에 붙는 "[한정수량]", "[1+1]", "[기모선택]" 같은 대괄호 태그는 디자인명이 아니라
   // 마케팅/안내용 접두 표기이므로 전사필름 집계 키(design||fit)가 태그 유무로 갈리지 않도록 항상 제거한다.
   const BRACKET_TAG_RE = /^\s*(\[[^\]]*\]\s*)+/;
@@ -775,14 +775,16 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       const attr = groupSize === 3 ? tokens[i] : null;
       let colorPart = tokens[i + (groupSize - 2)], sizePart = tokens[i + (groupSize - 1)];
       let subDesign = null;
-      // 1+1 세트 상품일 때만 " - "를 "디자인명 - 색상" 구분자로 해석한다. 세트가 아닌 일반
-      // 상품은 색상명 자체에 " - "가 들어가도(투톤 컬러 표기 등) 디자인명이 색상명으로
-      // 잘못 뒤바뀌지 않도록 그대로 둔다.
+      // 1+1 세트 상품일 때만 "디자인명-색상" 구분자로 해석한다. 세트가 아닌 일반
+      // 상품은 색상명 자체에 "-"가 들어가도(투톤 컬러 표기 등) 디자인명이 색상명으로
+      // 잘못 뒤바뀌지 않도록 그대로 둔다. 하이픈 앞뒤 공백은 상품마다 달라서
+      // ("REWRITE - 블랙 민트"처럼 공백 있음, "ASCENT-블랙 레드"처럼 공백 없음 둘 다 존재)
+      // 공백 유무에 상관없이 매칭한다.
       if (isSet){
-        const sepIdx = colorPart.indexOf(' - ');
-        if (sepIdx !== -1){
-          subDesign = colorPart.slice(0, sepIdx).trim();
-          colorPart = colorPart.slice(sepIdx+3).trim();
+        const m = colorPart.match(/^(.+?)\s*-\s*(.+)$/);
+        if (m){
+          subDesign = m[1].trim();
+          colorPart = m[2].trim();
         }
       }
       items.push({subDesign:subDesign, colorRaw:colorPart, size:sizePart, attr:attr});
