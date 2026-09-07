@@ -705,7 +705,9 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   }
 
   // ---------- product name / option parsing ----------
-  const FIT_RE = /(슬림핏|오버핏|루즈핏|레귤러핏|와이드핏|박시핏|박스핏|스탠다드핏|세미오버핏|롤업)\s*(반팔|긴팔|나시|민소매|후드집업|후드|후디|맨투맨|셔츠|원피스|치마|스커트|팬츠|조거팬츠|가디건|니트)/;
+  // 핏과 옷 종류 사이에 "래글런(=레글런/라글란)" 같은 소매 형태 수식어가 끼어들 수 있어
+  // ("오버핏 래글런 후디" 등) 선택적 중간 그룹으로 흡수한다. 없으면 예전과 동일하게 동작한다.
+  const FIT_RE = /(슬림핏|오버핏|루즈핏|레귤러핏|와이드핏|박시핏|박스핏|스탠다드핏|세미오버핏|롤업)\s*((?:래글런|레글런|라글란)\s*)?(반팔|긴팔|나시|민소매|후드집업|후드|후디|맨투맨|셔츠|원피스|치마|스커트|팬츠|조거팬츠|가디건|니트)/;
   // 상품명 앞에 붙는 "[한정수량]", "[1+1]", "[기모선택]" 같은 대괄호 태그는 디자인명이 아니라
   // 마케팅/안내용 접두 표기이므로 전사필름 집계 키(design||fit)가 태그 유무로 갈리지 않도록 항상 제거한다.
   const BRACKET_TAG_RE = /^\s*(\[[^\]]*\]\s*)+/;
@@ -750,7 +752,8 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     }
     const m = productName.match(FIT_RE);
     if (m){
-      const fit = m[1] + ' ' + m[2];
+      const midQualifier = m[2] ? (m[2].trim() + ' ') : '';
+      const fit = m[1] + ' ' + midQualifier + m[3];
       const design = productName.slice(0, m.index).replace(BRACKET_TAG_RE,'').trim();
       return {fit: fit, design: design || '(디자인명 미상)', ok:true, isSet: isSet};
     }
@@ -1007,9 +1010,11 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     const aNum = !isNaN(na) && /^-?\d+(\.\d+)?$/.test(String(a).trim());
     const bNum = !isNaN(nb) && /^-?\d+(\.\d+)?$/.test(String(b).trim());
     if (aNum && bNum) return na - nb;
-    if (aNum) return -1;
-    if (bNum) return 1;
     const ra = letterSizeRank(a), rb = letterSizeRank(b);
+    // S/M/L 같은 알파벳 사이즈는 숫자 사이즈(1~4 등)보다 작은 치수이므로 앞에 오게 한다.
+    // (예: 래글런 후디 사이즈 S,1,2,3,4 → S가 맨 앞) 그 외 비숫자 값은 예전처럼 숫자 뒤로.
+    if (aNum) return rb !== null ? 1 : -1;
+    if (bNum) return ra !== null ? -1 : 1;
     if (ra !== null && rb !== null) return ra - rb;
     if (ra !== null) return -1;
     if (rb !== null) return 1;
