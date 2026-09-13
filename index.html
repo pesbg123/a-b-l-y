@@ -738,6 +738,14 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   // 디자인명이 색상명으로 뒤바뀌는 사고를 막기 위함).
   const SET_MARKER_RE = /1\+1|세트|SET/i;
 
+  // 옷 종류명 자체에 공백이 들어가는 경우("롱 슬리브") 상품코드(판매자 상품코드,
+  // "_"로 join된 세그먼트) 쪽엔 공백이 아예 없이 내려올 수 있다("롱슬리브"). 상품명 경로는
+  // 항상 공백 있는 표기를 그대로 쓰므로, 상품코드 경로로 뽑힌 fit도 이 함수로 표기를 맞춰서
+  // 같은 상품이 fit 문자열 차이로 집계에서 두 항목으로 쪼개지지 않게 한다.
+  function canonicalizeFit(fit){
+    return fit.replace(/롱\s*슬리브/, '롱 슬리브');
+  }
+
   function parseNameMeta(productName, productCode){
     productName = productName || '';
     productCode = productCode || '';
@@ -746,15 +754,18 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       const parts = productCode.split('_').filter(Boolean);
       if (parts.length >= 3){
         const maybeFit = parts[0] + ' ' + parts[1];
-        if (FIT_RE.test(maybeFit)){
-          return {fit: maybeFit, design: parts.slice(2).join(' '), ok:true, isSet: isSet};
+        const fm = maybeFit.match(FIT_RE);
+        if (fm){
+          const midQualifier = fm[2] ? (fm[2].trim() + ' ') : '';
+          const fit = canonicalizeFit(fm[1] + ' ' + midQualifier + fm[3]);
+          return {fit: fit, design: parts.slice(2).join(' '), ok:true, isSet: isSet};
         }
       }
     }
     const m = productName.match(FIT_RE);
     if (m){
       const midQualifier = m[2] ? (m[2].trim() + ' ') : '';
-      const fit = m[1] + ' ' + midQualifier + m[3];
+      const fit = canonicalizeFit(m[1] + ' ' + midQualifier + m[3]);
       const design = productName.slice(0, m.index).replace(BRACKET_TAG_RE,'').trim();
       return {fit: fit, design: design || '(디자인명 미상)', ok:true, isSet: isSet};
     }
