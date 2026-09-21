@@ -737,6 +737,9 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   // 단일 상품은 옵션 정보의 " - "를 디자인 구분자로 해석하면 안 된다(투톤 컬러명 등과 혼동되어
   // 디자인명이 색상명으로 뒤바뀌는 사고를 막기 위함).
   const SET_MARKER_RE = /1\+1|세트|SET/i;
+  // "무지"(블랭크/논프린트) 디자인은 전사필름이 필요 없으므로 전사필름 집계에서 제외한다
+  // (옷 수량 집계에는 그대로 포함 — 블랭크 원단 자체는 발주해야 함).
+  const NO_PRINT_DESIGN_RE = /^무지$/;
 
   // 옷 종류명 자체에 공백이 들어가는 경우("롱 슬리브") 상품코드(판매자 상품코드,
   // "_"로 join된 세그먼트) 쪽엔 공백이 아예 없이 내려올 수 있다("롱슬리브"). 상품명 경로는
@@ -766,12 +769,24 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     if (m){
       const midQualifier = m[2] ? (m[2].trim() + ' ') : '';
       const fit = canonicalizeFit(m[1] + ' ' + midQualifier + m[3]);
-      const design = productName.slice(0, m.index).replace(BRACKET_TAG_RE,'').trim();
+      let design = productName.slice(0, m.index).replace(BRACKET_TAG_RE,'').trim();
+      // "오버핏_후디_1+1_무지"처럼 세트 상품인데 상품명에 디자인명이 전혀 없는 경우(무지/블랭크
+      // 상품이라 실제로 디자인이 없음), 옵션의 "디자인명-색상" 표기(subDesign)가 최우선이고
+      // 이건 그게 없을 때만 쓰이는 폴백이므로, 코드의 나머지 세그먼트(세트 표시 제외)를 대신 쓴다.
+      if (!design && productCode){
+        const designParts = productCode.split('_').filter(Boolean).filter(function(p){ return !SET_MARKER_RE.test(p); });
+        const designFromCode = designParts.slice(2).join(' ');
+        if (designFromCode) design = designFromCode;
+      }
       return {fit: fit, design: design || '(디자인명 미상)', ok:true, isSet: isSet};
     }
     const design = productName.replace(/\d+\s*COLORS?/i,'').replace(/\bSET\b/i,'').replace(BRACKET_TAG_RE,'').trim();
     return {fit:'기타', design: design || '(상품명 없음)', ok:false, isSet: isSet};
   }
+
+  // [기모선택]류 추가옵션의 실제 값은 지금까지 전부 "기모"/"논기모"뿐이었다. 3단(속성/색상/
+  // 사이즈) 구조인지 판별할 때 이 어휘를 신호로 쓴다(아래 groupSize 판별 참고).
+  const ATTR_TOKEN_RE = /^(기모|논기모)$/;
 
   function parseOptionString(optionStr, isSet){
     if (!optionStr) return {items:[], error:'empty'};
@@ -780,10 +795,19 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     // 보통은 "색상/사이즈" 2단 구조지만, [기모선택]처럼 상품에 추가 옵션(예: 기모/논기모)이
     // 붙으면 에이블리가 "추가옵션/색상/사이즈" 3단 구조로 내려준다. 2로 나눠떨어지면 기존 방식을
     // 그대로 쓰고, 홀수(2로 안 나눠짐)일 때만 3단 구조인지 확인해서 대응한다.
+    // 다만 "1+1 세트 + [기모선택]"이 겹치면 아이템당 3토큰 × 2아이템 = 6개처럼 짝수이면서
+    // 3으로도 나눠떨어지는 경우가 생겨 위 규칙만으로는 2단/3단이 모호하다. 이때는 각 그룹의
+    // 첫 토큰이 전부 "기모"/"논기모"인지로 실제 구조를 확인해서 3단으로 판별한다.
     let groupSize = 2;
     if (tokens.length % 2 !== 0){
       if (tokens.length % 3 === 0) groupSize = 3;
       else return {items:[], error:'odd-tokens'};
+    } else if (tokens.length % 3 === 0){
+      let looksLikeAttrGroups = true;
+      for (let i=0;i<tokens.length;i+=3){
+        if (!ATTR_TOKEN_RE.test(tokens[i])){ looksLikeAttrGroups = false; break; }
+      }
+      if (looksLikeAttrGroups) groupSize = 3;
     }
     const items = [];
     for (let i=0;i<tokens.length;i+=groupSize){
@@ -968,12 +992,15 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
 
           // 전사필름은 기모/논기모 원단 속성과 무관하게 같은 필름을 쓰므로 집계 키에서 속성을 빼
           // 같은 디자인이 속성별로 쪼개지지 않게 한다. 어떤 속성들이 한 필름에 묶였는지는 따로 모아
-          // 블록 제목에 "(기모+논기모)"처럼 표시한다.
-          const filmKey = design + '||' + meta.fit;
-          if (!filmAgg[filmKey]){ filmAgg[filmKey] = {}; filmAttrs[filmKey] = {}; filmOrder.push(filmKey); }
-          if (item.attr) filmAttrs[filmKey][item.attr] = true;
-          const label = filmLabel(base, variant);
-          filmAgg[filmKey][label] = (filmAgg[filmKey][label] || 0) + effQty;
+          // 블록 제목에 "(기모+논기모)"처럼 표시한다. "무지"(블랭크) 디자인은 프린트가 없으므로
+          // 필름 집계 자체에서 제외한다.
+          if (!NO_PRINT_DESIGN_RE.test(design)){
+            const filmKey = design + '||' + meta.fit;
+            if (!filmAgg[filmKey]){ filmAgg[filmKey] = {}; filmAttrs[filmKey] = {}; filmOrder.push(filmKey); }
+            if (item.attr) filmAttrs[filmKey][item.attr] = true;
+            const label = filmLabel(base, variant);
+            filmAgg[filmKey][label] = (filmAgg[filmKey][label] || 0) + effQty;
+          }
 
           const colorLabel = base + (variant ? ('(' + variant + ')') : '');
           u.itemLabels.push(shippingItemLabel(design, meta.ok, fit, colorLabel, size, effQty));
