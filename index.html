@@ -256,6 +256,8 @@
   .seller-gate .gate-btns .btn:nth-child(1)::before{content:'🐈';}
   .seller-gate .gate-btns .btn:nth-child(2)::before{content:'🐈‍⬛';}
   .seller-gate .gate-btns .btn:nth-child(3)::before{content:'😼';}
+  .seller-gate .gate-btns .btn:nth-child(4){background:var(--lav);}
+  .seller-gate .gate-btns .btn:nth-child(4)::before{content:'🙀';}
   .seller-gate .gate-btns .btn:hover{background:var(--lime);}
   .seller-bar{
     display:flex; align-items:center; gap:10px; margin-top:16px; padding:10px 16px; border-radius:16px;
@@ -461,6 +463,7 @@
       <button type="button" class="btn" data-seller="어바웃유">어바웃유</button>
       <button type="button" class="btn" data-seller="루비끄">루비끄</button>
       <button type="button" class="btn" data-seller="글리치드">글리치드</button>
+      <button type="button" class="btn" data-seller="모노헤이즈">모노헤이즈</button>
     </div>
   </div></div>
 </div>
@@ -897,7 +900,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   ];
   const DEFAULT_VENDOR = '트리거';
   const VENDOR_ORDER = ['트리거', 'YUM', '프라임에이트'];
-  // 위 핏별 규칙은 어바웃유·루비끄 기준이다. 글리치드는 같은 복종(오버핏 후디 등)이라도 옷을 전부
+  // 위 핏별 규칙은 어바웃유·루비끄·모노헤이즈 기준이다. 글리치드는 같은 복종(오버핏 후디 등)이라도 옷을 전부
   // 프라임에이트에서 받으므로, 셀러 단위로 거래처를 통째로 고정한다.
   const SELLER_VENDOR_OVERRIDE = { '글리치드': '프라임에이트' };
   function vendorForFit(fit){
